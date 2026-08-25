@@ -1,0 +1,14 @@
+{
+  "name": "demo8-chumon-no-oi-ryoriten",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "注文の多い料理店 - 探索+脱出ブラウザゲームデモ（板ポリ2.5D / ビルド工程なし）",
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\"",
+    "serve": "python3 scripts/serve.py 8899",
+    "gen:docs": "node scripts/gen-prompts.mjs",
+    "check:assets": "node scripts/check-assets.mjs",
+    "fit:assets": "node scripts/fit-assets.mjs"
+  }
+}

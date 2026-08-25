@@ -1,0 +1,646 @@
+/* ============================================================
+   注文の多い料理店 — 基本レイアウト
+   3層構造: #stage(Three.js) / #overlay(DOM) / #vignette(演出)
+   舞台は 16:9 固定。画面に収まる最大サイズでレターボックス表示する
+   ============================================================ */
+
+:root {
+  --ink:        #241a12;   /* 銅版画の線の色 */
+  --paper:      #e8dfcd;   /* 古い象牙 */
+  --ochre:      #b08d4f;
+  --letterbox:  #08070a;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: var(--letterbox);
+  color: var(--paper);
+  font-family: "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "Noto Serif JP", serif;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--letterbox);
+}
+
+/* 16:9 を保ったまま、画面に収まる最大サイズにする */
+#frame {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  width:  min(100vw, calc(100vh * 16 / 9));
+  height: min(100vh, calc(100vw * 9 / 16));
+  overflow: hidden;
+  background: #000;
+}
+
+/* --- 背面: Three.js --- */
+#stage {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* AI生成画像の絵柄のばらつきを吸収する共通グレーディング（設計書 §4.5） */
+  filter: saturate(0.85) contrast(1.05);
+}
+
+/* --- 中間: 会話・選択肢 --- */
+#overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;   /* 子要素で個別に auto にする */
+}
+#overlay > * { pointer-events: auto; }
+
+/* --- 前面: 空腹による周縁の暗さ（数値は出さない / 仕様書 §11） --- */
+/**
+ * 空腹の周縁。濃さと揺れは ui/vignette.js が毎フレーム書く。
+ * ★書き換えるのは opacity と transform だけ（合成だけで済む）。
+ *   暗くなり始める半径 --vig-in は段階が変わったときだけ書く。
+ */
+#vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  --vig-in: 80%;
+  background: radial-gradient(ellipse at 50% 50%,
+              rgba(0, 0, 0, 0) var(--vig-in),
+              rgba(0, 0, 0, 1) 120%);
+  opacity: 0;
+  transform: scale(1.03);
+  will-change: opacity, transform;
+}
+
+/* --- 描画情報の小さな表示 --- */
+.debug {
+  position: absolute;
+  left: 1.2em;
+  top: 0.9em;
+  font-size: 12px;
+  line-height: 1.7;
+  letter-spacing: 0.04em;
+  color: rgba(232, 223, 205, 0.55);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  white-space: pre;
+}
+
+/* --- 縦持ちの案内 --- */
+#rotate-notice {
+  position: fixed;
+  inset: 0;
+  display: none;
+  place-items: center;
+  align-content: center;
+  gap: 1.2em;
+  background: var(--letterbox);
+  text-align: center;
+  z-index: 100;
+}
+#app.portrait #rotate-notice { display: grid; }
+#app.portrait #frame { visibility: hidden; }
+
+.rotate-icon {
+  margin: 0;
+  font-size: 64px;
+  line-height: 1;
+  color: var(--ochre);
+  transform: rotate(90deg);
+  animation: rotate-hint 2.4s ease-in-out infinite;
+}
+.rotate-text {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: 0.14em;
+  color: rgba(232, 223, 205, 0.8);
+}
+@keyframes rotate-hint {
+  0%, 45%  { transform: rotate(90deg); }
+  60%, 100%{ transform: rotate(0deg);  }
+}
+
+/* ============================================================
+   Phase 1: テキストUI（設計書 §7）
+   数値は出さない。開発パネルだけ別枠で出し、Phase 5 で落とす
+   ============================================================ */
+
+#overlay {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.panel {
+  margin: 0 3.5% 3%;
+  padding: 0.9em 1.4em 1.0em;
+  height: 34%;   /* 3D の主題を隠さない高さ。camera.js の PANEL_COVER と対で決めている */
+  /**
+   * ★はみ出しを隠さない。相方の肖像を枠の外（上）に置いているので、
+   * hidden にすると肖像が切り取られて出てこない。
+   * 枠自体は auto/scroll でないので、これでもスクロールはしない。
+   * 縦にあふれないよう、伸び縮みするのは .panel-text だけにしてある。
+   */
+  overflow: visible;
+  background: rgba(18, 14, 11, 0.86);
+  border: 1px solid rgba(232, 223, 205, 0.16);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.panel p {
+  margin: 0.15em 0;
+  font-size: clamp(12px, 1.35vw, 17px);
+  line-height: 1.85;
+  letter-spacing: 0.02em;
+}
+.panel p.spacer { height: 0.7em; margin: 0; }
+
+.log     { color: rgba(200, 188, 162, 0.92); }
+.log + .body,
+.body + .log { margin-top: 0.9em; padding-top: 0.9em; border-top: 1px solid rgba(232,223,205,0.12); }
+.body    { color: var(--paper); }
+
+/* ★本文以外は伸び縮みさせない。あふれは .panel-text の中だけで吸収する */
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+  gap: 0.55em;
+  margin-top: 0.85em;
+}
+
+.choice {
+  font: inherit;
+  font-size: clamp(12px, 1.3vw, 16px);
+  color: var(--paper);
+  background: rgba(52, 42, 32, 0.9);
+  border: 1px solid rgba(232, 223, 205, 0.3);
+  padding: 0.55em 1.1em;
+  cursor: pointer;
+  transition: background 140ms, border-color 140ms;
+}
+.choice:hover:not([disabled]) {
+  background: rgba(80, 64, 46, 0.95);
+  border-color: rgba(232, 223, 205, 0.6);
+}
+.choice[disabled] {
+  opacity: 0.38;
+  cursor: default;
+}
+.choice .hint {
+  font-size: 0.8em;
+  opacity: 0.75;
+  margin-left: 0.4em;
+}
+
+/* --- 開発パネル（Phase 5 で削除） --- */
+.dev {
+  position: absolute;
+  top: 0.7em;
+  right: 1em;
+  max-width: 40%;
+  font: 11px/1.65 ui-monospace, "SF Mono", Menlo, monospace;
+  color: rgba(232, 223, 205, 0.45);
+  text-align: right;
+  white-space: pre;
+  cursor: pointer;
+  pointer-events: auto;
+  user-select: none;
+}
+.dev:hover { color: rgba(232, 223, 205, 0.8); }
+
+/* ============================================================
+   フィードバック対応: 文字送り / パネルの縮小 / 場面のフェード
+   ============================================================ */
+
+.panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  transition: height 180ms ease, padding 180ms ease;
+}
+
+/**
+ * 枠の上の段（畳むボタン）。
+ *
+ * ★flex で縮まないようにする（flex: 0 0 auto）。
+ * 既定の flex-shrink は 1 なので、文章が多いページではこの段が潰され、
+ * 中の相方の肖像（高さ固定）が段からあふれて本文に重なっていた。
+ * 潰れる量は文章の量で変わるので、枠の高さは固定なのに
+ * 「内容でサイズが変わる」ように見えていた。
+ */
+.panel-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+  margin: -0.5em -0.6em 0.1em -0.3em;
+  min-height: 1.2em;
+}
+.panel-toggle {
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  color: rgba(232, 223, 205, 0.45);
+  background: none;
+  border: none;
+  padding: 0.15em 0.45em;
+  cursor: pointer;
+}
+.panel-toggle:hover { color: var(--paper); }
+
+/**
+ * ★枠の高さは内容で変えない。
+ * 文章の量や選択肢の数で伸縮させていたので、一手ごとに枠が動いて落ち着かなかった。
+ * 高さを固定し、あふれる文章は panel-text の中で送る。
+ * この値は camera.js の PANEL_COVER と対で決めている（寄りの構図が枠の上に収まるように）。
+ */
+.panel-text {
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.panel[data-size="normal"] { height: 34%; }
+.panel[data-size="small"]  { height: 25%; }
+.panel[data-size="hidden"] {
+  height: auto;
+  max-height: 2.4em;
+  background: rgba(18, 14, 11, 0.35);
+  border-color: transparent;
+  box-shadow: none;
+  padding: 0.3em 1.4em 0.3em;
+}
+.panel[data-size="hidden"] .panel-text,
+.panel[data-size="hidden"] .chips,
+.panel[data-size="hidden"] .collection-box,
+.panel[data-size="hidden"] .more,
+.panel[data-size="hidden"] .choices { display: none; }
+
+/* 隠しているときは、戻すボタンだけを確かに見せる */
+.panel[data-size="hidden"] .panel-toggle {
+  font-size: 19px;
+  color: rgba(232, 223, 205, 0.85);
+  padding: 0.1em 0.6em;
+}
+
+/* 文字送りが終わるまで選択肢を出さない。誤タップで読み飛ばすのを防ぐ */
+.choices.waiting { visibility: hidden; }
+
+/* 場面切り替えの暗転 */
+#fade {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 40;
+}
+
+/* --- 小物の渡す／隠す（チップ） --- */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+  gap: 0.5em;
+  margin-top: 0.9em;
+}
+.chips:empty { display: none; }
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55em;
+  font: inherit;
+  font-size: clamp(11px, 1.2vw, 15px);
+  color: rgba(232, 223, 205, 0.75);
+  background: rgba(30, 24, 18, 0.9);
+  border: 1px solid rgba(232, 223, 205, 0.22);
+  padding: 0.4em 0.8em 0.4em 0.5em;
+  cursor: pointer;
+  transition: color 140ms, background 140ms, border-color 140ms;
+}
+.chip:hover { border-color: rgba(232, 223, 205, 0.5); }
+
+.chip-mark {
+  font-size: 0.78em;
+  letter-spacing: 0.08em;
+  padding: 0.15em 0.5em;
+  border: 1px solid currentColor;
+  color: rgba(232, 223, 205, 0.45);
+}
+
+/* 隠す＝掌に握り込んだ状態。金色で明示する */
+.chip.on {
+  color: var(--paper);
+  background: rgba(74, 58, 34, 0.95);
+  border-color: rgba(176, 141, 79, 0.85);
+}
+.chip.on .chip-mark {
+  color: var(--ochre);
+  border-color: var(--ochre);
+}
+
+/* 相方を捨てるかどうかの場面。彩度を落として他の場面と見た目を変える */
+#stage.moment {
+  filter: saturate(0.28) contrast(1.32) brightness(0.92);
+  transition: filter 400ms ease-out;
+}
+
+/* 結末は文章が長いので枠を広く取る */
+/**
+ * 結末。★大きくしない。
+ * 結末は一枚絵が主役なので、枠を広げると絵が半分隠れる。
+ * 文章は長いがページ送りで読ませる（読み急がせる場面ではない）。
+ */
+.panel[data-size="ending"] { height: 32%; }
+
+/* --- ページ送りの「続きがある」表示 --- */
+.more {
+  position: absolute;
+  right: 1.3em;
+  bottom: 0.7em;
+  font-size: 13px;
+  color: var(--ochre);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms;
+}
+.more.shown { animation: more-blink 1.5s ease-in-out infinite; }
+@keyframes more-blink {
+  0%, 100% { opacity: 0.3; }
+  50%      { opacity: 1; }
+}
+
+/* 送り終わるまでチップも出さない */
+.chips.waiting { visibility: hidden; }
+
+/* 結末のコレクションは最後のページを読み終えてから出す */
+.collection-box { display: none; flex: 0 0 auto; }
+.collection-box.shown { display: block; }
+
+/* 相方が気にしている選択肢。折れていれば強調されない＝警告が届かない */
+.choice.emphasis {
+  border-color: rgba(176, 141, 79, 0.9);
+  background: rgba(74, 58, 34, 0.95);
+  box-shadow: 0 0 0 1px rgba(176, 141, 79, 0.35), 0 0 18px rgba(176, 141, 79, 0.22);
+  animation: emphasis-pulse 2.2s ease-in-out infinite;
+}
+.choice.emphasis .hint { color: var(--ochre); opacity: 1; }
+@keyframes emphasis-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(176,141,79,0.30), 0 0 12px rgba(176,141,79,0.16); }
+  50%      { box-shadow: 0 0 0 1px rgba(176,141,79,0.55), 0 0 24px rgba(176,141,79,0.34); }
+}
+
+/**
+ * --- 相方の肖像。P の段階を顔で伝える ---
+ *
+ * ★本文と同じ流れに置かない。枠の外（上）に絶対配置する。
+ * 流れの中に置くと、出たときだけ本文の位置がずれ、
+ * 段が潰れたときは本文に重なる。喋ったときだけ出るものなので、
+ * 出入りで他が動いてはいけない。
+ */
+.portrait {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 0.45em);
+  width: 2.6em;
+  height: 2.6em;
+  overflow: hidden;
+  border: 1px solid rgba(232, 223, 205, 0.28);
+  background: rgba(30, 24, 18, 0.8);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  display: none;
+}
+.portrait.shown { display: block; }
+.portrait canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  filter: saturate(0.8) contrast(1.05);
+}
+/* 枠を畳んでいるときは顔も出さない */
+.panel[data-size="hidden"] .portrait { display: none; }
+
+/* ============================================================
+   Phase 5: タイトル画面と到達記録
+   ============================================================ */
+
+#overlay.hidden { display: none; }
+
+/**
+ * タイトル。背景は3Dの山道カットなので、こちらは文字だけを置く。
+ * 左に寄せるのは、背景の山猫軒と札が右にあるため（絵を隠さない）。
+ */
+.title {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: none;
+  padding: 6% 4% 5%;
+  background: linear-gradient(100deg,
+              rgba(12, 9, 7, 0.88) 0%,
+              rgba(12, 9, 7, 0.72) 38%,
+              rgba(12, 9, 7, 0.10) 66%,
+              rgba(12, 9, 7, 0.00) 100%);
+}
+.title.shown { display: flex; }
+
+/**
+ * 文字は下寄せにする。
+ * ★背景の「どなたもどうかお入りください」の札を隠さないため。
+ *   中央寄せにすると題字が札に重なる（実機で並べて決めた）。
+ *   札が上、題字が下に来ると「招きに応じて中へ」の順に読める。
+ */
+.title-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 0.55em;
+  max-width: 46%;
+}
+
+.title-main {
+  margin: 0;
+  font-size: clamp(26px, 3.6vw, 52px);
+  font-weight: normal;
+  letter-spacing: 0.16em;
+  line-height: 1.3;
+  color: var(--paper);
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.85);
+}
+.title-by {
+  margin: 0 0 0.4em;
+  font-size: clamp(11px, 1.15vw, 15px);
+  letter-spacing: 0.22em;
+  color: rgba(232, 223, 205, 0.6);
+}
+
+.title-start {
+  margin-top: 0.5em;
+  font-size: clamp(13px, 1.4vw, 18px);
+  padding: 0.7em 1.6em;
+}
+
+.title-help {
+  margin: 0.9em 0 0;
+  font-size: clamp(10px, 1.05vw, 13px);
+  color: rgba(232, 223, 205, 0.45);
+  letter-spacing: 0.06em;
+}
+
+/* 記録を消す。押すまで目立たせない */
+.title-wipe {
+  margin-top: 0.2em;
+  font: inherit;
+  font-size: clamp(10px, 1vw, 12px);
+  color: rgba(232, 223, 205, 0.28);
+  background: none;
+  border: none;
+  padding: 0.3em 0;
+  cursor: pointer;
+  letter-spacing: 0.08em;
+}
+.title-wipe:hover { color: rgba(232, 223, 205, 0.6); }
+.title-wipe.armed { color: #c07a5a; }
+
+.title-record { margin: 0.3em 0 0; }
+
+/* --- 到達記録（結末画面とタイトルで共用） --- */
+.collection {
+  margin-top: 1.2em;
+  padding-top: 0.9em;
+  border-top: 1px solid rgba(232, 223, 205, 0.14);
+}
+/* タイトルでは枠線が邪魔なので外す */
+.collection.compact { margin-top: 0; padding-top: 0; border-top: none; }
+
+.collection-head {
+  margin: 0 0 0.5em;
+  font-size: clamp(11px, 1.15vw, 14px);
+  letter-spacing: 0.12em;
+  color: var(--ochre);
+}
+.collection-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4em 0.6em;
+}
+.collection .slot {
+  font-size: clamp(10px, 1.05vw, 13px);
+  padding: 0.3em 0.7em;
+  border: 1px solid rgba(232, 223, 205, 0.16);
+  color: rgba(232, 223, 205, 0.32);
+  letter-spacing: 0.04em;
+}
+.collection .slot.got {
+  color: var(--paper);
+  border-color: rgba(176, 141, 79, 0.75);
+}
+/**
+ * いま到達したものだけ光らせる。
+ * どれが増えたのかが一目で分かるようにする（結末画面でだけ効く）。
+ */
+.collection .slot.fresh {
+  color: var(--ochre);
+  animation: fresh-glow 2.4s ease-in-out infinite;
+}
+@keyframes fresh-glow {
+  0%, 100% { text-shadow: 0 0 0 rgba(176, 141, 79, 0); }
+  50%      { text-shadow: 0 0 14px rgba(176, 141, 79, 0.75); }
+}
+.collection-done {
+  margin: 0.8em 0 0;
+  font-size: clamp(10px, 1.05vw, 13px);
+  color: rgba(176, 141, 79, 0.8);
+}
+
+/* ============================================================
+   音量の設定
+   ============================================================ */
+
+/**
+ * ★滑り子にしない。5段階の点を押す形。
+ * 細かく決められても細かく決めたい人はいない。押した回数で分かるほうが速い。
+ */
+.settings {
+  position: absolute;
+  right: 3.5%;
+  top: 2.5%;
+  z-index: 35;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4em;
+}
+
+.settings-btn {
+  font: inherit;
+  font-size: clamp(13px, 1.3vw, 17px);
+  line-height: 1;
+  color: rgba(232, 223, 205, 0.45);
+  background: rgba(18, 14, 11, 0.55);
+  border: 1px solid rgba(232, 223, 205, 0.18);
+  padding: 0.35em 0.6em;
+  cursor: pointer;
+  transition: color 140ms, border-color 140ms;
+}
+.settings-btn:hover { color: var(--paper); border-color: rgba(232, 223, 205, 0.5); }
+.settings.open .settings-btn { color: var(--ochre); border-color: rgba(176, 141, 79, 0.7); }
+
+.settings-box {
+  display: none;
+  padding: 0.8em 1em;
+  background: rgba(18, 14, 11, 0.92);
+  border: 1px solid rgba(232, 223, 205, 0.2);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+}
+.settings.open .settings-box { display: block; }
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45em;
+}
+.settings-row + .settings-row { margin-top: 0.6em; }
+
+.settings-name {
+  width: 4.2em;
+  font-size: clamp(11px, 1.1vw, 14px);
+  color: rgba(232, 223, 205, 0.75);
+  letter-spacing: 0.06em;
+}
+
+/* 点。押した数が音量になる */
+.settings-dot {
+  width: 0.95em;
+  height: 0.95em;
+  padding: 0;
+  font-size: clamp(12px, 1.2vw, 16px);
+  background: transparent;
+  border: 1px solid rgba(232, 223, 205, 0.35);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms;
+}
+.settings-dot:hover { border-color: var(--ochre); }
+.settings-dot.on { background: var(--ochre); border-color: var(--ochre); }
+
+.settings-value {
+  min-width: 2.6em;
+  font-size: clamp(10px, 1.05vw, 13px);
+  color: rgba(232, 223, 205, 0.5);
+  letter-spacing: 0.06em;
+}
