@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="color-scheme" content="dark">
+<title>注文の多い料理店</title>
+<link rel="stylesheet" href="./style.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://esm.sh/three@0.184.0",
+    "three/addons/": "https://esm.sh/three@0.184.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- 16:9 の舞台枠。中身はすべてこの枠に対する絶対配置 -->
+  <div id="frame">
+    <!-- 背面: Three.js（板ポリ2.5D） -->
+    <canvas id="stage"></canvas>
+
+    <!-- 中間: 会話・選択肢（DOM） -->
+    <div id="overlay">
+      <div id="debug" class="debug"></div>
+    </div>
+
+    <!-- 前面: 空腹による周縁の暗さ。入力を透過させる -->
+    <div id="vignette" data-hunger="0"></div>
+  </div>
+
+  <!-- 縦持ち時の案内。数秒で消える。進行は止めない -->
+  <div id="rotate-notice">
+    <p class="rotate-icon">▭</p>
+    <p class="rotate-text">横向きにすると画面全体が見えます</p>
+    <p class="rotate-sub">そのままでも遊べます</p>
+  </div>
+
+</div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
