@@ -237,6 +237,7 @@ html, body {
  * 枠は本文だけを持つので、高さを固定したまま2行を必ず守れる。
  */
 #overlay > .controls {
+  position: relative;   /* 相方の肖像をこの段の上に積むための基準 */
   margin: 0 3.5% 0.55em;
   flex: 0 0 auto;
   display: flex;
@@ -251,8 +252,10 @@ html, body {
 /* 枠の中にいたときの余白は要らない。段の gap で取る */
 .controls .chips,
 .controls .choices { margin-top: 0; }
-/* 空の段は場所を取らない（gap のぶんだけ空くのを防ぐ） */
-.controls > :empty { display: none; }
+/* 空の段は場所を取らない（gap のぶんだけ空くのを防ぐ）。
+   ★対象を絞ること。肖像も一瞬空になるので、まとめて消すと顔が出なくなる */
+.controls > .chips:empty,
+.controls > .choices:empty { display: none; }
 /* 枠を畳んだら操作も消す。枠の状態は overlay.js が親にも書いている */
 #overlay[data-size="hidden"] .controls { display: none; }
 
@@ -540,10 +543,14 @@ html, body {
 /**
  * --- 相方の肖像。P の段階を顔で伝える ---
  *
- * ★本文と同じ流れに置かない。枠の外（上）に絶対配置する。
- * 流れの中に置くと、出たときだけ本文の位置がずれ、
- * 段が潰れたときは本文に重なる。喋ったときだけ出るものなので、
- * 出入りで他が動いてはいけない。
+ * ★流れに置かない。絶対配置する。
+ * 流れの中に置くと、出たときだけ他の位置がずれる。喋ったときだけ出るものなので、
+ * 出入りで他が動いてはいけない（ボタンが動けば押し間違いになる）。
+ *
+ * ★基準は「操作の段（.controls）の上」。枠の上ではない。
+ * 枠の上に置いていたが、選択肢を枠の外へ出した結果、肖像とボタンが
+ * 同じ場所を取り合って重なった（実機 560x315 で確認）。
+ * 段の上に積めば、選択肢が何段になっても肖像はその上へ逃げる。
  */
 .portrait {
   position: absolute;
@@ -565,8 +572,8 @@ html, body {
   display: block;
   filter: saturate(0.8) contrast(1.05);
 }
-/* 枠を畳んでいるときは顔も出さない */
-.panel[data-size="hidden"] .portrait { display: none; }
+/* 畳んでいるときは顔も出さない。肖像は .controls の中にあり、
+   段そのものが #overlay[data-size="hidden"] で消えるので個別の指定は要らない */
 
 /* ============================================================
    Phase 5: タイトル画面と到達記録

@@ -101,11 +101,6 @@ export function createUI(root, hooks = {}, opt = {}) {
   head.className = 'panel-head';
   bar.appendChild(head);
 
-  // 相方の肖像。P の段階を台詞以外でも伝える（仕様書 §11）
-  const portrait = document.createElement('div');
-  portrait.className = 'portrait';
-  bar.appendChild(portrait);
-
   const toggle = document.createElement('button');
   toggle.className = 'panel-toggle';
   toggle.type = 'button';
@@ -134,6 +129,21 @@ export function createUI(root, hooks = {}, opt = {}) {
   const controls = document.createElement('div');
   controls.className = 'controls';
   root.insertBefore(controls, panel);
+
+  /**
+   * 相方の肖像。P の段階を台詞以外でも伝える（仕様書 §11）。
+   *
+   * ★操作の段に置く。基準は「枠の上」ではなく「操作の段の上」。
+   * 枠の上に絶対配置していたが、選択肢を枠の外へ出した結果、
+   * 肖像とボタンが同じ場所を取り合って重なった（実機 560x315 で確認）。
+   * 段の上に積めば、選択肢が何段になっても肖像はその上へ逃げる。
+   *
+   * 流れの中には入れない。喋ったときだけ出るものなので、
+   * 出入りでボタンの位置が動いてはいけない（押し間違いになる）。
+   */
+  const portrait = document.createElement('div');
+  portrait.className = 'portrait';
+  controls.appendChild(portrait);
 
   const chipArea = document.createElement('div');
   chipArea.className = 'chips';
